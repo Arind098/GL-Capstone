@@ -1,10 +1,10 @@
 import numpy as np
 import pandas as pd
-from features import mfcc
-from features import logfbank
 import scipy.io.wavfile as wav
 from scipy.io.wavfile import write as wav_write
-import scikits.samplerate
+from python_speech_features import mfcc
+import librosa
+import shutil
 import os
 
 '''
@@ -16,18 +16,10 @@ def read_in_audio(filename):
     (rate, sig) = wav.read(filename)
     return sig, rate
 
-# read in signal, take absolute value and slice seconds 1-3 from beginning
-def get_two_secs(filename):
-    sig, rate = read_in_audio(filename)
-    abs_sig = np.abs(sig)
-    two_secs = abs_sig[rate:3*rate]
-    return two_secs
-
-# calculates moving average for a specified window (number of samples)
-def take_moving_average(sig, window_width):
-    cumsum_vec = np.cumsum(np.insert(sig, 0, 0))
-    ma_vec = (cumsum_vec[window_width:] - cumsum_vec[:-window_width])/float(window_width)
-    return ma_vec
+# make mfcc np array from wav file using librosa package
+def make_librosa_mfcc(y, sr):
+     mfcc_feat = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
+     return mfcc_feat
 
 # read in signal, change sample rate to outrate (samples/sec), use write_wav=True to save wav file to disk
 def downsample(filename, outrate=8000, write_wav = False):
@@ -38,39 +30,14 @@ def downsample(filename, outrate=8000, write_wav = False):
     if write_wav:
         wav_write('{}_down_{}.wav'.format(filename, outrate), outrate, down_sig)
 
-# change total number of samps for downsampled file to n_samps by trimming or zero-padding and standardize them
-def make_standard_length(filename, n_samps=240000):
+# Get normalized mfcc features from the downsized files and change total number of samps for downsampled file to n_samps by trimming or zero-padding and standardize them
+def make_normed_mfcc(filename, n_samps=240000, outrate=8000):
     down_sig, rate = downsample(filename)
     normed_sig = librosa.util.fix_length(down_sig, n_samps)
     normed_sig = (normed_sig - np.mean(normed_sig))/np.std(normed_sig)
-    return normed_sig
-
-# from a folder containing wav files, normalize each, divide into num_splits-1 chunks and write the resulting np.arrays to a single matrix
-def make_split_audio_array(folder, num_splits = 5):
-    lst = []
-    for filename in os.listdir(folder):
-        if filename.endswith('wav'):
-            normed_sig = make_standard_length(filename)
-            chunk = normed_sig.shape[0]/num_splits
-            for i in range(num_splits - 1):
-                lst.append(normed_sig[i*chunk:(i+2)*chunk])
-    lst = np.array(lst)
-    lst = lst.reshape(lst.shape[0], -1)
-    return lst
-
-# for input wav file outputs (13, 2999) mfcc np array
-def make_normed_mfcc(filename, outrate=8000):
-    normed_sig = make_standard_length(filename)
-    normed_mfcc_feat = mfcc(normed_sig, outrate)
+    normed_mfcc_feat = make_librosa_mfcc(normed_sig, outrate)
     normed_mfcc_feat = normed_mfcc_feat.T
     return normed_mfcc_feat
-
-# make mfcc np array from wav file using speech features package
-def make_mfcc(filename):
-    (rate, sig) = wav.read(filename)
-    mfcc_feat = mfcc(sig, rate)
-    mfcc_feat = mfcc_feat.T
-    return mfcc_feat
 
 # for folder containing wav files, output numpy array of normed mfcc
 def make_class_array(folder):
@@ -85,7 +52,7 @@ def make_class_array(folder):
 def make_mean_mfcc(filename):
     try:
         (rate, sig) = wav.read(filename)
-        mfcc_feat = mfcc(sig, rate)
+        mfcc_feat = make_librosa_mfcc(sig, rate)
         avg_mfcc = np.mean(mfcc_feat, axis = 0)
         return avg_mfcc
     except:
