@@ -7,5 +7,4 @@ python -m pip install --user numpy \
                     re \
                     seaborn \
                     pydub \
-                    features \
                     scipy
